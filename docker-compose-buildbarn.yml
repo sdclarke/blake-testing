@@ -1,0 +1,115 @@
+# The contents of this file are covered by APACHE License Version 2.
+# See licenses/APACHEV2-LICENSE.txt for more information.
+
+version: '3.4'
+services: 
+  frontend:
+    image: bazel/cmd/bb_storage:bb_storage_container
+    command:
+    - /config/frontend.jsonnet
+    ports:
+    - 7980:7980
+    - 8980:8980
+    volumes:
+    - ./buildbarn_config:/config
+
+  storage-0:
+    image: bazel/cmd/bb_storage:bb_storage_container
+    command:
+    - /config/storage.jsonnet
+    expose:
+    - 8981
+    ports:
+    - 7981:7981
+    volumes:
+    - ./buildbarn_config:/config
+    - ./storage-ac-0:/storage-ac
+    - ./storage-cas-0:/storage-cas
+    - ./storage-ac-0/persistent_state:/storage-ac/persistent_state
+    - ./storage-cas-0/persistent_state:/storage-cas/persistent_state
+
+  storage-1:
+    image: bazel/cmd/bb_storage:bb_storage_container
+    command:
+    - /config/storage.jsonnet
+    expose:
+    - 8981
+    ports:
+    - 17981:7981
+    volumes:
+    - ./buildbarn_config:/config
+    - ./storage-ac-1:/storage-ac
+    - ./storage-cas-1:/storage-cas
+    - ./storage-ac-1/persistent_state:/storage-ac/persistent_state
+    - ./storage-cas-1/persistent_state:/storage-cas/persistent_state
+
+
+  scheduler:
+    image: bazel/cmd/bb_scheduler:bb_scheduler_container
+    command:
+    - /config/scheduler.jsonnet
+    expose:
+    - 8982
+    - 8983
+    ports:
+    - 7982:7982
+    volumes:
+    - ./buildbarn_config:/config
+
+
+  browser:
+    image: bazel/cmd/bb_browser:bb_browser_container
+    command:
+    - /config/browser.jsonnet
+    ports:
+    - 7984:7984
+    volumes:
+    - ./buildbarn_config:/config
+
+
+  worker:
+    image: bazel/cmd/bb_worker:bb_worker_container
+    command:
+    - /config/worker.jsonnet
+    ports:
+    - 7986:7986
+    volumes:
+    - ./buildbarn_config:/config
+    - ./worker:/worker
+    #- ./worker/build:/worker/build
+    #- ./worker/cache:/worker/cache
+
+
+  runner:
+    build:
+      context: docker
+      target: build_env
+    image: bb-runner:latest
+    command:
+    - sh
+    - -c
+    - while ! test -f /bb/installed; do sleep 1; done; exec /bb/tini -v -g -- /bb/bb_runner /config/runner.jsonnet
+    volumes:
+    - ./worker:/worker
+    - ./buildbarn_config:/config
+    - ./bb:/bb
+    depends_on:
+    - runner-installer
+
+
+  runner-installer:
+    image: bazel/cmd/bb_runner:bb_runner_installer
+    entrypoint: []
+    # This prevents ETXTBSY errors that result from attempting to run
+    # installed executables before they have been fully copied.
+    command: >
+      sh
+      -c
+      "mkdir tmp_bb &&
+      /install /bb/tmp_bb &&
+      mv tmp_bb/tini /bb &&
+      mv tmp_bb/bb_runner /bb &&
+      mv tmp_bb/installed /bb"
+    working_dir: /bb
+    volumes:
+    - ./bb:/bb
